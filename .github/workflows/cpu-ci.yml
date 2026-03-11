@@ -1,0 +1,87 @@
+name: CPU CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.ci.yml
+          environment-name: targetdiff_ci
+          cache-environment: false
+          init-shell: "none"
+          generate-run-shell: true
+          post-cleanup: "none"
+
+      - name: Python Compile Check
+        shell: micromamba-shell {0}
+        run: |
+          python -m compileall -q scripts utils datasets models
+
+      - name: CLI Help Check
+        shell: micromamba-shell {0}
+        run: |
+          python -m scripts.run --help
+          python -m scripts.run train-base --help
+          python -m scripts.run train-dpo --help
+          python -m scripts.run train-nft-vina-sa --help
+          python -m scripts.run sample-nft --help
+          python -m scripts.run eval-simple --help
+
+      - name: Dry-run Dispatch Check
+        shell: micromamba-shell {0}
+        run: |
+          mkdir -p tmp/ci_runtime tmp/ci_empty_samples
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          src = Path('configs/runtime')
+          dst = Path('tmp/ci_runtime')
+          dst.mkdir(parents=True, exist_ok=True)
+
+          def write_cfg(name, updates):
+              data = yaml.safe_load((src / name).read_text(encoding='utf-8'))
+              for key_path, value in updates.items():
+                  cur = data
+                  parts = key_path.split('.')
+                  for p in parts[:-1]:
+                      cur = cur.setdefault(p, {})
+                  cur[parts[-1]] = value
+              (dst / name).write_text(yaml.safe_dump(data, sort_keys=False), encoding='utf-8')
+
+          write_cfg('train_base.yml', {})
+          write_cfg('train_dpo.yml', {
+              'inputs.dpo_data': 'tmp/placeholder_dpo.pkl',
+              'inputs.dpo_ref_ckpt': 'tmp/placeholder_ref.pt',
+          })
+          write_cfg('train_nft_vina_sa.yml', {})
+          write_cfg('sample_nft.yml', {
+              'inputs.checkpoint': 'tmp/placeholder_sample.pt',
+          })
+          write_cfg('eval_simple.yml', {
+              'inputs.sample_path': 'tmp/ci_empty_samples',
+              'options.save': False,
+              'options.save_pickle': False,
+              'options.multiprocess': False,
+          })
+          PY
+
+          python -m scripts.run train-base --runtime-config tmp/ci_runtime/train_base.yml --dry-run
+          python -m scripts.run train-dpo --runtime-config tmp/ci_runtime/train_dpo.yml --dry-run
+          python -m scripts.run train-nft-vina-sa --runtime-config tmp/ci_runtime/train_nft_vina_sa.yml --dry-run
+          python -m scripts.run sample-nft --runtime-config tmp/ci_runtime/sample_nft.yml --dry-run
+          python -m scripts.run eval-simple --runtime-config tmp/ci_runtime/eval_simple.yml --dry-run
+
+      - name: Python-only Consistency Check
+        shell: micromamba-shell {0}
+        run: |
+          python scripts/check_script_refs.py

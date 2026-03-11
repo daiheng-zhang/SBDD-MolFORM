@@ -1,0 +1,22 @@
+task: sample-nft
+base_config: configs/sampling_nft_steps_100_final.yml
+paths:
+  repo_root: .
+  data_root: ./data
+  log_root: ./logs_diffusion
+  output_root: ./outputs_sampling
+  tmp_root: ./tmp
+runtime:
+  smoke: false
+  gpu_ids: [0, 1, 2, 3]
+  node_all: null
+  start_idx: 0
+  total_tasks: 100
+  num_steps: 100
+  num_samples: 100
+  batch_size: 100
+  result_prefix: sampling_nft_steps100
+  omp_num_threads: 16
+inputs:
+  checkpoint: null
+  result_path: null

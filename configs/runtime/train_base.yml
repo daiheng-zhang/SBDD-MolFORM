@@ -1,0 +1,16 @@
+task: train-base
+base_config: configs/training_standard_scratch.yml
+paths:
+  repo_root: .
+  data_root: ./data
+  log_root: ./logs_diffusion
+  output_root: ./outputs_sampling
+  tmp_root: ./tmp
+runtime:
+  smoke: false
+  tag: standard_scratch
+  run_name: KDD-Molform-scratch
+  train_report_iter: 10
+  omp_num_threads: 16
+inputs:
+  checkpoint: null

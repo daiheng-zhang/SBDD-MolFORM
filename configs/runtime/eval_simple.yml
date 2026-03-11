@@ -1,0 +1,24 @@
+task: eval-simple
+paths:
+  repo_root: .
+  data_root: ./data
+  log_root: ./logs_diffusion
+  output_root: ./outputs_sampling
+  tmp_root: ./tmp
+runtime:
+  smoke: false
+  tag: eval_simple
+  omp_num_threads: 16
+inputs:
+  sample_path: null
+  protein_root: ./data/test_set
+options:
+  docking_mode: none
+  exhaustiveness: 16
+  multiprocess: false
+  save_pickle: false
+  report_confidence_vina: false
+  eval_num_examples: null
+  save: true
+  verbose: false
+  eval_step: -1

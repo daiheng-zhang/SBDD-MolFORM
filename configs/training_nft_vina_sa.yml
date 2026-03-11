@@ -1,0 +1,100 @@
+data:
+  name: pl
+  path: ./data/crossdocked_v1.1_rmsd1.0_pocket10
+  split: ./data/crossdocked_pocket10_pose_split.pt
+  transform:
+    ligand_atom_mode: add_aromatic
+    random_rot: False
+
+model:
+  model_mean_type: C0  # ['noise', 'C0']
+  beta_schedule: sigmoid
+  beta_start: 1.e-7
+  beta_end: 2.e-3
+  v_beta_schedule: cosine
+  v_beta_s: 0.01
+
+  t_min: 0.0
+  center_pos_mode: protein
+  loss_v_weight: 1.
+  chamfer_loss_weight: 0.5
+  node_indicator: True
+  model_type: uni_o2
+  num_blocks: 1
+  num_layers: 9
+  hidden_dim: 128
+  n_heads: 16
+  edge_feat_dim: 4  # edge type feat
+  num_r_gaussian: 20
+  knn: 32 # !
+  num_node_types: 8
+  act_fn: relu
+  norm: True
+  cutoff_mode: knn  # [radius, none]
+  ew_net_type: global  # [r, m, none]
+  num_x2h: 1
+  num_h2x: 1
+  r_max: 10.
+  x2h_out_fc: False
+  sync_twoup: False
+
+train:
+  seed: 2021
+  batch_size: 16
+  num_workers: 0
+  n_acc_batch: 1
+  max_iters: 10000000
+  val_freq: 100
+  pos_noise_std: 0.1
+  max_grad_norm: 8.0
+  use_dpo: False
+  use_nft: True
+
+  nft:
+    beta: 0.3
+    beta_discrete: 0.3
+    ema_decay: 0.995
+    grad_accum_steps: 4
+    rollout_batch_size: 4
+    rollout_num_samples: 8
+    rollout_chunk_size: 64
+    train_batch_size: 16
+    num_inner_epochs: 1
+    sample_num_steps: 100
+    sample_time_schedule: log
+    sample_num_atoms: prior
+    ligand_v_temp: 0.01
+    ligand_v_noise: 1.0
+    center_pos_mode: protein
+    reward:
+      type: vina_sa
+      protein_root: ./data/crossdocked_v1.1_rmsd1.0_pocket10_pdb
+      exhaustiveness: 8
+      size_factor: 1.0
+      buffer: 5.0
+      tmp_dir: ./tmp_vina
+      score_sign: -1.0
+      log_vina: True
+      cleanup: True
+      # r(m) = (-clip(vina(m), -16, -1) + 1) / 15 + (SA(m) - 0.17) / 0.83
+      vina_clip_low: -16.0
+      vina_clip_high: -1.0
+      vina_offset: 1.0
+      vina_divisor: 15.0
+      sa_shift: 0.17
+      sa_scale: 0.83
+      invalid_reward: 0.0
+      norm_ema_decay: 0.95
+      min_std: 1.e-3
+
+  optimizer:
+    type: adam
+    lr: 5.e-7
+    weight_decay: 0
+    beta1: 0.95
+    beta2: 0.999
+  scheduler:
+    type: plateau
+    factor: 0.6
+    patience: 10
+    min_lr: 1.e-10
