@@ -1,155 +1,218 @@
-# MolFORM: Preference-Aligned Multimodal Flow Matching for Structure-Based Drug Design
+# MolFORM: Multi-modal Flow Matching for Structure-Based Drug Design
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/huang3170/MolForm/blob/main/LICENSE)
 
-MolFORM is a multimodal flow-matching model for **structure-based drug design (SBDD)**, with preference alignment (e.g., DPO) and reward-based fine-tuning (NFT; Vina + SA) to improve generated molecules.
+This repository is the official implementation of **MolFORM** ([arXiv:2507.05503](https://arxiv.org/abs/2507.05503)), a multi-modal flow-matching diffusion framework for structure-based molecular generation.
 
-![MolFORM Architecture](./assets/online_rl_model_figure.png)
+<p align="center">
+  <img src="./assets/Model.png" alt="MolFORM Architecture" width="600" />
+</p>
 
-This repo uses a **Python-only runtime interface**. All tasks are unified under:
+---
+## Performance Comparison on CrossDocked2020
+
+| Model       | Vina Score ↓ | Vina Min ↓ | Vina Dock ↓ | Diversity ↑ | QED ↑    | SA ↑     |
+|-------------|--------------|------------|-------------|-------------|----------|----------|
+| TargetDiff  | -5.71        | -6.43      | -7.41       | 0.72        | 0.49     | 0.60     |
+| MolCraft    | -6.15        | -6.99      | -7.79       | 0.72        | 0.48     | 0.66     |
+| Alidiff     | -7.07        | -8.09      | -8.90       | 0.73        | 0.50     | 0.56     |
+| MolJO       | -7.52        | -8.33      | -9.05       | 0.66        | **0.56** | **0.77** |
+| MolFORM-RL  | **-7.60**    | **-8.37**  | **-9.24**   | **0.75**    | 0.50     | 0.68     |
+
+---
+
+## Project Overview
+
+MolFORM supports three training modes:
+
+1. **Standard Training**
+   - Base diffusion / flow-matching training.
+2. **DPO Training**
+   - Offline preference optimization with ranked molecular pairs.
+3. **NFT-Vina-SA Training**
+   - Online RL-style fine-tuning with docking (Vina) + synthetic accessibility (SA) reward.
+
+> NFT-Vina-SA is designed as **fine-tuning** from a base checkpoint.
+> Use `configs/training_nft_vina_sa.yml`, load a pretrained model, and do **not** restore optimizer state.
+
+---
+
+## Environment Setup
+
+Use the provided conda environment file:
 
 ```bash
-python -m scripts.run <subcommand> --runtime-config <config.yml>
+conda env create -f env.yaml
+conda activate MolFORM
 ```
 
-## Contents
-
-- [Environment](#environment)
-- [Data Preparation](#data-preparation)
-- [Quick Start](#quick-start)
-- [Unified Commands](#unified-commands)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
-
-## Environment
-
-We recommend using Conda:
+For cluster scripts in `script_run/`, you can override environment selection:
 
 ```bash
-conda env create -f environment.yml
-conda activate molform
+export CONDA_ENV=MolFORM
 ```
+
+---
 
 ## Data Preparation
-
-All user-facing paths live in `./configs/runtime/*.yml`. By default, `paths.data_root` points to `./data`.
-
-For most tasks, `data_root` must contain at least:
-
-- `./data/crossdocked_v1.1_rmsd1.0_pocket10/` (dataset directory)
-- `./data/crossdocked_pocket10_pose_split.pt` (train/val/test split)
-- `./data/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb` (processed LMDB)
-- `./data/test_set/` (proteins used for evaluation / sampling)
-- `./data/crossdocked_v1.1_rmsd1.0_pocket10_pdb/` (protein structures for docking reward; used by NFT)
-
-DPO training additionally needs a preference dataset file (set `inputs.dpo_data` in `./configs/runtime/train_dpo.yml`). This repo includes example files under `./data/dpo_data/`.
-
-Data references:
 
 - Base data reference: [TargetDiff](https://github.com/guanjq/targetdiff)
 - DPO data reference: [AliDiff](https://github.com/MinkaiXu/AliDiff)
 
-Data preprocessing helpers are in `./scripts/data_preparation/`.
+### NFT-Vina-SA specific preprocessing
 
-## Quick Start
+NFT-Vina-SA uses the same LMDB/split as standard training, plus receptor files for docking reward.
 
-This quick start runs sampling + evaluation (requires a GPU and a trained checkpoint).
+1. `train.nft.reward.protein_root` (default `./data/crossdocked_v1.1_rmsd1.0_pocket10_pdb`) must contain protein PDB files aligned with dataset filenames.
+2. Reward code resolves protein files using:
+   - `protein_root / data.protein_filename` (primary), or
+   - `protein_root / dirname(ligand_filename) / basename(ligand_filename)[:10] + ".pdb"` (fallback).
+3. `train.nft.reward.tmp_dir` (default `./tmp_vina`) must be writable.
+4. `protein_root` should also be writable, because Vina preprocessing may generate cached `*.pqr` and `*.pdbqt` files next to receptor PDBs.
 
-Checkpoint download: [Google Drive](https://drive.google.com/drive/folders/1B9ZFcNjdBFH5jyjmTM0nthV8B3q4t1--?usp=sharing)
-Place downloaded ckpt files under `./ckpt/` (for example `./ckpt/molform_base_model.pt`), then set the corresponding path in runtime configs (such as `inputs.checkpoint` or `inputs.init_checkpoint`).
-
-1) Set `inputs.checkpoint` in `./configs/runtime/sample_nft.yml`, then run:
-
-```bash
-python -m scripts.run sample-nft --runtime-config ./configs/runtime/sample_nft.yml
-```
-
-2) Set `inputs.sample_path` in `./configs/runtime/eval_simple.yml` to the sampling output directory (under `./outputs_sampling` unless overridden), then run:
+Quick sanity check before NFT training:
 
 ```bash
-python -m scripts.run eval-simple --runtime-config ./configs/runtime/eval_simple.yml
+test -d ./data/crossdocked_v1.1_rmsd1.0_pocket10
+test -f ./data/crossdocked_pocket10_pose_split.pt
+test -d ./data/crossdocked_v1.1_rmsd1.0_pocket10_pdb
+mkdir -p ./tmp_vina
 ```
 
-For training (base/DPO/NFT), see [Unified Commands](#unified-commands).
+---
 
-## Unified Commands
+## Checkpoints
 
-Task runtime configs live in `./configs/runtime/`:
+Default local checkpoint directory:
 
-- `./configs/runtime/train_base.yml`
-- `./configs/runtime/train_dpo.yml`
-- `./configs/runtime/train_nft_vina_sa.yml`
-- `./configs/runtime/sample_nft.yml`
-- `./configs/runtime/eval_simple.yml`
+```text
+./ckpt/
+  molform_base_model.pt
+  molform_dpo_model.pt
+```
 
-You usually only need to edit **runtime configs**. Keep all project paths as relative paths (for example `./...`). The unified runtime will generate a temporary, patched config under `paths.tmp_root` at launch time.
-Legacy template YAMLs are internal runtime inputs; end users should not need to edit non-runtime configs.
+Pretrained checkpoints and sampling outputs are available on Google Drive:
 
-### 1) Base Training (`train-base`)
+- [Google Drive (checkpoints and sampling outputs)](https://drive.google.com/drive/folders/1B9ZFcNjdBFH5jyjmTM0nthV8B3q4t1--?usp=sharing)
 
-Train the base flow-matching model.
+Most scripts/configs now use local defaults and can be overridden with environment variables (for example `CKPT`, `LOGDIR`, `DPO_DATA`).
+
+---
+
+## Training
+
+## 1) Standard Training
+
+### Direct command
 
 ```bash
-python -m scripts.run train-base --runtime-config ./configs/runtime/train_base.yml
+python -m scripts.train_diffusion configs/training_standard.yml \
+  --tag standard_training \
+  --name "Standard Training"
 ```
 
-Optional warm start:
-
-- Set `inputs.checkpoint` in `./configs/runtime/train_base.yml`
-
-### 2) DPO Preference Alignment (`train-dpo`)
-
-Fine-tune with Direct Preference Optimization (DPO).
-
-Required in `./configs/runtime/train_dpo.yml`:
-
-- `inputs.dpo_data`: preference data file (e.g., a `.pkl`)
-- `inputs.dpo_ref_ckpt`: reference checkpoint (base model)
+### Script
 
 ```bash
-python -m scripts.run train-dpo --runtime-config ./configs/runtime/train_dpo.yml
+bash script_run/run_train_standard.sh
 ```
 
-### 3) NFT Fine-tuning (Vina + SA) (`train-nft-vina-sa`)
+---
 
-Fine-tune with rewards built from docking score (Vina) and synthetic accessibility (SA).
+## 2) DPO Training
+
+DPO uses a reference model (`model.ref_model_checkpoint`) and preference data (`--dpo_data`).
+
+### Direct command
 
 ```bash
-python -m scripts.run train-nft-vina-sa --runtime-config ./configs/runtime/train_nft_vina_sa.yml
+python -m scripts.train_diffusion configs/training_dpo.yml \
+  --tag dpo_training \
+  --dpo_data ./data/dpo_data/dpo_idx_sort_new.pkl \
+  --name "DPO Training"
 ```
 
-Optional warm start:
-
-- Set `inputs.init_checkpoint` in `./configs/runtime/train_nft_vina_sa.yml`
-
-### 4) Sampling (`sample-nft`)
-
-Generate molecules using a trained checkpoint.
-
-Required in `./configs/runtime/sample_nft.yml`:
-
-- `inputs.checkpoint`: checkpoint file to sample from
+### Script
 
 ```bash
-python -m scripts.run sample-nft --runtime-config ./configs/runtime/sample_nft.yml
+bash script_run/run_train_dpo.sh
 ```
 
-Sampling outputs are written to `paths.output_root` (default: `./outputs_sampling`). You can override the output folder with `inputs.result_path`.
+---
 
-### 5) Evaluation (CPU path) (`eval-simple`)
+## 3) NFT-Vina-SA Training
 
-Evaluate a sampling directory.
+This mode performs online reward-guided fine-tuning.
 
-Required in `./configs/runtime/eval_simple.yml`:
+- Config: `configs/training_nft_vina_sa.yml`
+- Load base pretrained weights
+- Skip optimizer/scheduler restore
+- Optional: reset iteration counter to 1 (`--reset_iteration`)
 
-- `inputs.sample_path`: path to a sampling output directory
+### Direct command
 
 ```bash
-python -m scripts.run eval-simple --runtime-config ./configs/runtime/eval_simple.yml
+python -m scripts.train_diffusion configs/training_nft_vina_sa.yml \
+  --train_report_iter 10 \
+  --tag nft_vina_sa \
+  --logdir ./logs_diffusion \
+  --name KDD-Molform-NFT-VinaSA \
+  --checkpoint ./ckpt/molform_base_model.pt \
+  --no_optimizer_state \
+  --non_strict_load \
+  --reset_iteration
 ```
 
-`eval-simple` is the only supported evaluation subcommand in the unified runtime.
+### Script
 
-## License
+```bash
+bash script_run/run_train_nft_vina_sa.sh
+```
 
-MIT. See `LICENSE`.
+---
+
+## Sampling
+
+Use the script entry point:
+
+```bash
+bash script_run/run_sample.sh
+```
+
+Sampling now prefers `data.path` and `data.split` from the runtime config.
+You can also override them directly at runtime:
+
+```bash
+python -m scripts.sample_diffusion configs/sampling_kdd_confidence_49000.yml \
+  --data_path ./data/crossdocked_v1.1_rmsd1.0_pocket10 \
+  --split_path ./data/crossdocked_pocket10_pose_split.pt
+```
+
+Or through the shell wrapper:
+
+```bash
+DATA_PATH=./data/crossdocked_v1.1_rmsd1.0_pocket10 \
+SPLIT_PATH=./data/crossdocked_pocket10_pose_split.pt \
+bash script_run/run_sample.sh
+```
+
+---
+
+## Evaluation
+
+`RESULT_PATH` must be a sampling output directory that contains `result_*.pt` files.
+
+Recommended script entry point:
+
+```bash
+RESULT_PATH=./outputs_sampling/sample_default \
+bash script_run/run_eval.sh
+```
+
+Python entry point:
+
+```bash
+python -m scripts.evaluate_diffusion_multiprocess ./outputs_sampling/sample_default \
+  --protein_root ./data/test_set \
+  --docking_mode vina_score
+```
