@@ -144,6 +144,11 @@ def main(rank, num_gpus):
         default="",
         help="W&B run ID for resuming the same run.",
     )
+    parser.add_argument(
+        "--reset_iteration",
+        action="store_true",
+        help="Reset the loaded checkpoint iteration to 1 before training.",
+    )
     args = parser.parse_args()
 
 
@@ -371,7 +376,7 @@ def main(rank, num_gpus):
             checkpoint = misc.load_checkpoint(
                 args.checkpoint, map_location=f"cuda:{rank}"
             )
-            start_iter = checkpoint["iteration"]
+            start_iter = 1 if args.reset_iteration else checkpoint["iteration"]
             state_dict = _strip_confidence_state_dict(checkpoint["model"])
             model.load_state_dict(state_dict, strict=not args.non_strict_load)
             if not args.no_optimizer_state:
@@ -379,7 +384,17 @@ def main(rank, num_gpus):
                     optimizer.load_state_dict(checkpoint["optimizer"])
                 if "scheduler" in checkpoint:
                     scheduler.load_state_dict(checkpoint["scheduler"])
-            logger.info(f"=> loaded checkpoint {args.checkpoint} (iteration {checkpoint['iteration']})") if rank == 0 else None
+            if rank == 0:
+                if args.reset_iteration:
+                    logger.info(
+                        f"=> loaded checkpoint {args.checkpoint} "
+                        f"(checkpoint iteration {checkpoint['iteration']} -> reset to 1)"
+                    )
+                else:
+                    logger.info(
+                        f"=> loaded checkpoint {args.checkpoint} "
+                        f"(iteration {checkpoint['iteration']})"
+                    )
         else:
             logger.info(f"=> no checkpoint found at {args.checkpoint}") if rank == 0 else None
             start_iter = 1
@@ -1129,6 +1144,7 @@ def main(rank, num_gpus):
         best_loss, best_iter = None, None
         best_reward_mean, best_reward_iter = None, None
         best_vina_score = None
+        best_vina_iter = None
         for it in range(start_iter, config.train.max_iters + 1):
             train(it)
             if (rank == 0) and (it % 100 == 0 or it == config.train.max_iters):
@@ -1248,9 +1264,13 @@ def main(rank, num_gpus):
                             ckpt_path,
                         )
                 else:
+                    if best_vina_score is None or best_vina_iter is None:
+                        best_vina_msg = "not available yet"
+                    else:
+                        best_vina_msg = f"{best_vina_score:.6f} at iter {best_vina_iter}"
                     logger.info(
                         f"[Validate] Vina score is not improved. "
-                        f"Best vina score: {best_vina_score:.6f} at iter {best_vina_iter}"
+                        f"Best vina score: {best_vina_msg}"
                     )
                 if not args.is_debug:
                     log_dict = {

@@ -111,7 +111,10 @@ def default_runtime_config(task: str) -> Dict[str, Any]:
         common["base_config"] = "configs/training_nft_vina_sa.yml"
         common["runtime"]["tag"] = "nft_vina_sa"
         common["runtime"]["run_name"] = "KDD-Molform-NFT-VinaSA"
-        common["inputs"] = {"init_checkpoint": None}
+        common["inputs"] = {
+            "init_checkpoint": None,
+            "reset_iteration": False,
+        }
     elif task == "sample-nft":
         common["base_config"] = "configs/sampling_nft_steps_100_final.yml"
         common["runtime"].update(
@@ -235,6 +238,14 @@ def validate_runtime_config(
             raise RuntimeConfigError("sample-nft requires inputs.checkpoint")
         if strict_paths:
             ensure_file(resolve_path(str(ckpt), Path(cfg["_meta"]["repo_root"])), "Sample checkpoint")
+
+    if task == "train-nft-vina-sa":
+        init_ckpt = cfg["inputs"].get("init_checkpoint")
+        if init_ckpt and strict_paths:
+            ensure_file(
+                resolve_path(str(init_ckpt), Path(cfg["_meta"]["repo_root"])),
+                "NFT init checkpoint",
+            )
 
     if task == "eval-simple":
         sample_path = cfg["inputs"].get("sample_path")

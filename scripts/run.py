@@ -150,6 +150,8 @@ def _run_train_nft_vina_sa(cfg: dict, dry_run: bool) -> int:
         if init_ckpt:
             init_path = resolve_path(str(init_ckpt), _repo_root(cfg))
             cmd.extend(["--checkpoint", str(init_path), "--no_optimizer_state", "--non_strict_load"])
+            if bool(inputs.get("reset_iteration", False)) or bool(runtime.get("smoke", False)):
+                cmd.append("--reset_iteration")
 
         return _run(cmd, env, dry_run, cwd=repo_root)
     finally:
