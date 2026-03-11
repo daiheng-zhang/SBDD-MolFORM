@@ -52,6 +52,9 @@ For cluster scripts in `script_run/`, you can override environment selection:
 export CONDA_ENV=MolFORM
 ```
 
+Shell wrappers below assume you are already running inside an allocated GPU session.
+For the SBATCH-enabled NFT script, you can also submit it with `sbatch`.
+
 ---
 
 ## Data Preparation
@@ -75,6 +78,7 @@ Quick sanity check before NFT training:
 ```bash
 test -d ./data/crossdocked_v1.1_rmsd1.0_pocket10
 test -f ./data/crossdocked_pocket10_pose_split.pt
+test -f ./data/crossdocked_v1.1_rmsd1.0_pocket10_processed_final.lmdb
 test -d ./data/crossdocked_v1.1_rmsd1.0_pocket10_pdb
 mkdir -p ./tmp_vina
 ```
@@ -184,6 +188,8 @@ You can also override them directly at runtime:
 
 ```bash
 python -m scripts.sample_diffusion configs/sampling_kdd_confidence_49000.yml \
+  -i 0 \
+  --result_path ./outputs_sampling/sample_default \
   --data_path ./data/crossdocked_v1.1_rmsd1.0_pocket10 \
   --split_path ./data/crossdocked_pocket10_pose_split.pt
 ```

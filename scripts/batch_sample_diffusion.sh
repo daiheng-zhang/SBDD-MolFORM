@@ -1,0 +1,30 @@
+TOTAL_TASKS=100
+
+
+if [ $# != 5 ]; then
+    echo "Error: 5 arguments required."
+    exit 1
+fi
+
+CONFIG_FILE=$1
+RESULT_PATH=$2
+NODE_ALL=$3
+NODE_THIS=$4
+START_IDX=$5
+EXTRA_ARGS=()
+
+if [ -n "${DATA_PATH:-}" ]; then
+    EXTRA_ARGS+=(--data_path "${DATA_PATH}")
+fi
+
+if [ -n "${SPLIT_PATH:-}" ]; then
+    EXTRA_ARGS+=(--split_path "${SPLIT_PATH}")
+fi
+
+for ((i=$START_IDX;i<$TOTAL_TASKS;i++)); do
+    NODE_TARGET=$(($i % $NODE_ALL))
+    if [ $NODE_TARGET == $NODE_THIS ]; then
+        echo "Task ${i} assigned to this worker (${NODE_THIS})"
+        python -m scripts.sample_diffusion ${CONFIG_FILE} -i ${i} --result_path ${RESULT_PATH} "${EXTRA_ARGS[@]}"
+    fi
+done
