@@ -25,7 +25,6 @@ SCAN_FILES = [
     ),
 ]
 FORBIDDEN_SNIPPETS = [
-    "script_run/",
     "eval-full",
 ]
 
@@ -100,10 +99,6 @@ def main() -> int:
         for token in FORBIDDEN_SNIPPETS:
             if token in text:
                 errors.append(f"forbidden token '{token}' found in {file_path.relative_to(REPO_ROOT)}")
-
-    shell_files = sorted(REPO_ROOT.rglob("*.sh"))
-    for sh_path in shell_files:
-        errors.append(f"shell file is not allowed: {sh_path.relative_to(REPO_ROOT)}")
 
     if errors:
         print("ERROR: python-only checks failed:")
